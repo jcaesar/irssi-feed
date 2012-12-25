@@ -134,7 +134,7 @@ sub check_feeds {
 		push @news, feed_get_news($feed);
 	}
 	my $nulldate = DateTime->new(year => 0);
-	Irssi::print($_->title ." - ". $_->link) foreach sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) } @news;
+	Irssi::print($_->title ." - ". $_->link) foreach sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) } grep {defined $_} @news;
 	my $nextcheck = ((min(map { feed_check($_) } @feeds)) // 0) + 1;
 	if($thistimeout == $timeoutcntr) {
 		my $fivemin = clock_gettime(CLOCK_MONOTONIC) + 301;
