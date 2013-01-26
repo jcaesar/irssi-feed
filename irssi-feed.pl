@@ -39,7 +39,7 @@ sub initialize {
 		my ($uri, $timeout) = split / /, $_;
 		feed_new($uri, $timeout);
 	}
-	Irssi::print("Loaded ".($#feeds+1)." feeds");
+	feedprint("Loaded ".($#feeds+1)." feeds");
 	check_feeds();
 }
 
@@ -52,12 +52,12 @@ sub feedreader_cmd {
 		my ($uri, $timeout) =  @args;
 		foreach(@feeds) {
 			if($_->{uri} eq $uri || $_->{id} eq $uri) {
-				Irssi::print("Failed to add/modify feed " . feed_stringrepr($_) . ": Already exists");
+				feedprint("Failed to add/modify feed " . feed_stringrepr($_) . ": Already exists");
 				return
 			}
 		}
 		my $feed = feed_new($uri, $timeout);
-		Irssi::print("Added feed " . $feed->{name});
+		feedprint("Added feed " . $feed->{name});
 		save_config();
 		check_feeds();
 	} elsif ($cmd eq "set") {
@@ -73,20 +73,20 @@ sub feedreader_cmd {
 				$_->{io}->{failed} = 0;
 				save_config();
 				check_feeds();
-				Irssi::print("Next check timeout for ". feed_stringrepr($_));
+				feedprint("Next check timeout for ". feed_stringrepr($_));
 				return;
 			}
 		}
 		check_feeds();
-		Irssi::print("Feed not found: $uri");
+		feedprint("Feed not found: $uri");
 	} elsif ($cmd eq "list") {
 		our @feeds;
 		if($#feeds < 0) {
-			Irssi::print("Feed list: empty");
+			feedprint("Feed list: empty");
 		} else {
-			Irssi::print("Feed list:");
+			feedprint("Feed list:");
 			foreach my $feed (@feeds) {
-				Irssi::print("   " . feed_stringrepr($feed));
+				feedprint("   " . feed_stringrepr($feed));
 			}
 		}
 		check_feeds(); # for the lulz
@@ -98,27 +98,27 @@ sub feedreader_cmd {
 			foreach my $feed (@feeds) {
 				if($feed->{id} eq $remove || $feed->{uri} eq $remove) {
 					feed_delete($feed);
-					Irssi::print("Feed deleted: " . feed_stringrepr($feed));
+					feedprint("Feed deleted: " . feed_stringrepr($feed));
 					$foundone = 1;
 				}
 			}
-			Irssi::print("Could not find feed $remove.") if(!$foundone);
+			feedprint("Could not find feed $remove.") if(!$foundone);
 		} else {
 			my $foundone = 0;
 			foreach(@feeds) {
 				if(not $_->{active}) {
 					$_->delete;
-					Irssi::print("Feed deleted: " . feed_stringrepr($_));
+					feedprint("Feed deleted: " . feed_stringrepr($_));
 					$foundone = 1;
 				}
 			}
-			Irssi::print("No inactive feeds.") if(!$foundone);
+			feedprint("No inactive feeds.") if(!$foundone);
 		}
 		save_config;
 	} elsif ($cmd eq "eval") {
-		Irssi::print(Dumper(eval (substr($data, 5))));
+		feedprint(Dumper(eval (substr($data, 5))));
 	} else {
-		Irssi::print("Unknown command: /feed $data");
+		feedprint("Unknown command: /feed $data");
 	}
 }
 
@@ -128,13 +128,13 @@ sub check_feeds {
 	state $timeoutcntr = 0;
 	my $thistimeout = shift // $timeoutcntr;
 	our @feeds;
-	#Irssi::print("check! $thistimeout $timeoutcntr");
+	#feedprint("check! $thistimeout $timeoutcntr");
 	my @news; 
 	foreach my $feed (@feeds) {
 		push @news, feed_get_news($feed);
 	}
 	my $nulldate = DateTime->new(year => 0);
-	Irssi::print($_->title ." - ". $_->link) foreach sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) } grep {defined $_} @news;
+	feedprint($_->title ." - ". $_->link) foreach sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) } grep {defined $_} @news;
 	my $nextcheck = ((min(map { feed_check($_) } @feeds)) // 0) + 1;
 	if($thistimeout == $timeoutcntr) {
 		my $fivemin = clock_gettime(CLOCK_MONOTONIC) + 301;
@@ -144,11 +144,11 @@ sub check_feeds {
 		$timeoutcntr += 1;
 		my $hackcopy = $timeoutcntr; # to avoid passing a reference. I don't understand why it happens
 		Irssi::timeout_add_once(1000 * $timeout, \&check_feeds, $hackcopy) if((scalar(grep { $_->{active} } @feeds)) > 0);
-		#Irssi::print("$hackcopy check in $timeout.")  if((scalar(grep { $_->{active} } @feeds)) > 0);
+		#feedprint("$hackcopy check in $timeout.")  if((scalar(grep { $_->{active} } @feeds)) > 0);
 	}
 	our $initial_skips;
 	if($initial_skips && all_feeds_gen1()) {
-		Irssi::print("Skipped $initial_skips feed entries.");
+		feedprint("Skipped $initial_skips feed entries.");
 		$initial_skips = 0;
 	}
 }
@@ -183,9 +183,9 @@ sub feed_new {
 		$feed->{active} = 0;
 		if($feed->{uri}->scheme eq 'https') {
 			$feed->{uri}->scheme('http');
-			Irssi::print(feed_stringrepr($feed) . " has https uri, https is not supported. Do /feed set " . $feed->{id} . " to reactivate with http.");
+			feedprint(feed_stringrepr($feed) . " has https uri, https is not supported. Do /feed set " . $feed->{id} . " to reactivate with http.");
 		} else {
-			Irssi::print("Unsupported uri scheme ".$feed->{uri}->scheme." in feed " . feed_stringrepr($feed));
+			feedprint("Unsupported uri scheme ".$feed->{uri}->scheme." in feed " . feed_stringrepr($feed));
 		}
 	}
 	return $feed;
@@ -201,7 +201,7 @@ sub feed_check {
 			$feed->{generation} += 1; # so the "Skipped" message won't hang forever
 			return 0;
 		}
-		Irssi::print("Warning, stall feed " . $feed->{id}) if($feed->{io}->{conn});
+		feedprint("Warning, stall feed " . $feed->{id}) if($feed->{io}->{conn});
 		feed_cleanup_conn($feed,1);
 		my $conn = $feed->{io}->{conn} = IO::Socket::INET->new(
 			Blocking => 0,
@@ -220,7 +220,7 @@ sub feed_check {
 
 sub feed_io_event_read {
 	my $self = shift;
-#	Irssi::print($self->{id} . " rdev " . (length $self->{io}->{buffer}));
+#	feedprint($self->{id} . " rdev " . (length $self->{io}->{buffer}));
 	if($self->{io}->{state} == 1) {
 		my $buf = '';
 		my $readcnt = 8192;
@@ -336,6 +336,16 @@ sub feed_stringrepr {
 	$feed->{timeout} ."s";
 }
 
+sub feedprint {
+	my ($msg) = @_;
+		foreach my $window (Irssi::windows()) { #feeling a little bad here
+		if ($window->{name} eq 'irssi-feed') {
+			$window->print($msg);
+			return;
+		}
+	}
+	Irssi::print($msg);
+}
 
 Irssi::command_bind('feed', \&feedreader_cmd);
 Irssi::settings_add_str('feedreader', 'feedlist', '');
