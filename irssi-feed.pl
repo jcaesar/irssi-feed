@@ -129,12 +129,11 @@ sub check_feeds {
 	my $thistimeout = shift // $timeoutcntr;
 	our @feeds;
 	#feedprint("check! $thistimeout $timeoutcntr");
-	my @news; 
-	foreach my $feed (@feeds) {
-		push @news, feed_get_news($feed);
-	}
 	my $nulldate = DateTime->new(year => 0);
-	feedprint($_->title ." - ". $_->link) foreach sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) } grep {defined $_} @news;
+	foreach my $feed (@feeds) {
+		feedprint($_->title ." - ". $_->link, $feed->{id}) foreach
+			sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) } grep {defined $_} feed_get_news($feed);
+	}
 	my $nextcheck = ((min(map { feed_check($_) } @feeds)) // 0) + 1;
 	if($thistimeout == $timeoutcntr) {
 		my $fivemin = clock_gettime(CLOCK_MONOTONIC) + 301;
@@ -337,14 +336,26 @@ sub feed_stringrepr {
 }
 
 sub feedprint {
-	my ($msg) = @_;
-		foreach my $window (Irssi::windows()) { #feeling a little bad here
-		if ($window->{name} eq 'irssi-feed') {
-			$window->print($msg);
-			return;
+	my ($msg, $name) = @_;
+	state $feedwin = 0;
+	$feedwin = 0 if(not $feedwin or $feedwin->{name} ne 'irssi-feed');
+	if(not $feedwin) {
+		foreach my $w (Irssi::windows()) { #feeling a little bad here
+			if ($w->{name} eq 'irssi-feed') {
+				$feedwin = $w;
+				last;
+			}
 		}
 	}
-	Irssi::print($msg);
+	if($feedwin) {
+		if($name) {
+			$feedwin->printformat(Irssi::MSGLEVEL_CLIENTCRAP, 'feedmsg', $name, $msg);
+		} else {
+			$feedwin->print($msg);
+		}
+	} else {
+		Irssi::print($msg);
+	}
 }
 
 Irssi::command_bind('feed', \&feedreader_cmd);
@@ -352,3 +363,4 @@ Irssi::settings_add_str('feedreader', 'feedlist', '');
 our $initial_skips = 0;
 our @feeds = ();
 Irssi::timeout_add_once(500, \&initialize, 0);
+Irssi::theme_register([ feedmsg => '<$0> $1' ]);
