@@ -11,6 +11,7 @@ use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use List::Util qw(min);
 use IO::Socket::INET;
 use Errno;
+use Getopt::Long qw(GetOptionsFromString);
 our $VERSION = "20121020";
 our %IRSSI = (
 	authors     => 'Julius Michaelis',
@@ -27,7 +28,11 @@ sub save_config {
 	my $str = '';
 	foreach my $feed (@feeds) {
 		if(defined $feed) { # this will be the only function with extra security against invalid stuff..
-			$str .= $feed->{uri} . " " . $feed->{timeout} . "\n"
+			$str .= " --id $feed->{id}" if($feed->{id});
+			$str .= " --uri $feed->{uri}";
+			$str .= " --interval $feed->{timeout} " if($feed->{timeout});
+			$str .= " --color $feed->{color} " if($feed->{color});
+			$str .= "\n";
 		}
 	}
 	Irssi::settings_set_str('feedlist', $str);
@@ -35,50 +40,57 @@ sub save_config {
 
 sub initialize {
 	our @feeds;
-	foreach(split(/\n/,Irssi::settings_get_str('feedlist'))) {
-		my ($uri, $timeout) = split / /, $_;
-		feed_new($uri, $timeout);
-	}
+	feedreader_cmd("add$_") foreach(split(/\n/,Irssi::settings_get_str('feedlist')));
 	feedprint("Loaded ".($#feeds+1)." feeds");
 	check_feeds();
 }
 
 sub feedreader_cmd {
-	my ($data, $server, $witem) = @_;
-	my @args = split(/ /, $data);
-	my $cmd = shift @args;
+	my ($data) = @_; #discarding server and window_item
+	my ($cmd, $args) = split(/ /, $data, 2);
+	my $feed_id;
+	my $feed_uri;
+	my $feed_timeout = 0;
+	my $feed_color = 'NOMODIFY';
+	my $feed_newid;
+	if(!GetOptionsFromString($args, 
+		'uri=s' => \$feed_uri,
+		'id=s' => \$feed_id,
+		'interval' => \$feed_timeout,
+		'color=s' => \$feed_color,
+		'newid=s' => \$feed_newid)
+	) {
+		feedprint("Could not parse options of $data");
+		return;
+	}
+	my $feed = find_feed_by('id', $feed_id) // find_feed_by('url', $feed_uri);
+	$feed_timeout = valid_timeout($feed_timeout) if($feed_timeout);
 	if($cmd eq "add") {
-		our @feeds;
-		my ($uri, $timeout) =  @args;
-		foreach(@feeds) {
-			if($_->{uri} eq $uri || $_->{id} eq $uri) {
-				feedprint("Failed to add/modify feed " . feed_stringrepr($_) . ": Already exists");
-				return
-			}
+		if($feed) {
+			feedprint("Failed to add feed " . feed_stringrepr($feed) . ": Already exists");
+		} elsif($feed_uri) {
+			$feed = feed_new($feed_uri, $feed_timeout, $feed_id, $feed_color);
+			feedprint("Added feed " . feed_stringrepr($feed, 'long'));
+			save_config();
+			check_feeds();
+		} else {
+			feedprint("Failed to add feed. No uri given.");
 		}
-		my $feed = feed_new($uri, $timeout);
-		feedprint("Added feed " . $feed->{name});
-		save_config();
-		check_feeds();
 	} elsif ($cmd eq "set") {
-		our @feeds;
-		my ($uri, $timeout) =  @args;
-		foreach(@feeds) {
-			if(not defined $uri || $_->{uri} eq $uri || $_->{id} eq $uri) {
-				$timeout //= $_->{timeout};
-				$timeout = 3600 if $timeout > 3600;
-				$timeout = 10 if $timeout < 10;
-				$_->{timeout} = $timeout;
-				$_->{active} = 1;
-				$_->{io}->{failed} = 0;
-				save_config();
-				check_feeds();
-				feedprint("Next check timeout for ". feed_stringrepr($_));
-				return;
-			}
+		if($feed) {
+			$feed->{active} = 1;
+			$feed->{io}->{failed} = 0;
+			$feed->{uri} = $feed_uri if($feed_uri && $feed_id);
+			$feed->{color} = $feed_color eq 'NOMODIFY' ? $feed->{color} : $feed_color;
+			$feed->{timout} = $feed_timeout if($feed_timeout);
+			$feed->{id} = $feed_newid if($feed_newid);
+			save_config();
+			check_feeds();
+			feedprint("Modified feed: ". feed_stringrepr($feed, 'long'));
+			check_feeds();
+		} else {
+			feedprint("No feed found.");
 		}
-		check_feeds();
-		feedprint("Feed not found: $uri");
 	} elsif ($cmd eq "list") {
 		our @feeds;
 		if($#feeds < 0) {
@@ -86,43 +98,37 @@ sub feedreader_cmd {
 		} else {
 			feedprint("Feed list:");
 			foreach my $feed (@feeds) {
-				feedprint("   " . feed_stringrepr($feed));
+				feedprint("   " . feed_stringrepr($feed, 'long'));
 			}
 		}
 		check_feeds(); # for the lulz
 	} elsif ($cmd eq "rem" || $cmd eq "rm") {
-		my ($remove) = @args;
-		our @feeds;
-		if(defined $remove) {
+		if($feed) {
+			feed_delete($feed);
+			feedprint("Feed deleted: " . feed_stringrepr($feed));
+		} elsif(!defined $args) {
 			my $foundone = 0;
-			foreach my $feed (@feeds) {
-				if($feed->{id} eq $remove || $feed->{uri} eq $remove) {
-					feed_delete($feed);
-					feedprint("Feed deleted: " . feed_stringrepr($feed));
-					$foundone = 1;
-				}
-			}
-			feedprint("Could not find feed $remove.") if(!$foundone);
-		} else {
-			my $foundone = 0;
+			our @feeds;
 			foreach(@feeds) {
 				if(not $_->{active}) {
-					$_->delete;
-					feedprint("Feed deleted: " . feed_stringrepr($_));
 					$foundone = 1;
+					feed_delete($_);
+					feedprint("Feed deleted: " . feed_stringrepr($_));
 				}
 			}
 			feedprint("No inactive feeds.") if(!$foundone);
+		} else {
+			feedprint("No feed to remove.");
 		}
 		save_config;
 	} elsif ($cmd eq "eval") {
-		feedprint(Dumper(eval (substr($data, 5))));
+		feedprint(Dumper(eval ($args)));
 	} else {
-		feedprint("Unknown command: /feed $data");
+		feedprint("Unknown command: /feed $cmd");
 	}
 }
 
-sub all_feeds_gen1 { our @feeds; $_->{generation} || return 0 for @feeds; 1 }
+sub all_feeds_gen1 { our @feeds; $_->{generation} or return 0 for @feeds; 1 }
 
 sub check_feeds {
 	state $timeoutcntr = 0;
@@ -131,7 +137,7 @@ sub check_feeds {
 	#feedprint("check! $thistimeout $timeoutcntr");
 	my $nulldate = DateTime->new(year => 0);
 	foreach my $feed (@feeds) {
-		feedprint($_->title ." - ". $_->link, $feed->{id}) foreach
+		feedprint($_->title ." - ". $_->link, $feed) foreach
 			sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) } grep {defined $_} feed_get_news($feed);
 	}
 	my $nextcheck = ((min(map { feed_check($_) } @feeds)) // 0) + 1;
@@ -152,14 +158,36 @@ sub check_feeds {
 	}
 }
 
+sub find_feed_by {
+	my ($by, $hint) = @_;
+	return unless $hint;
+	our @feeds;
+	foreach(@feeds) {
+		return $_ if(lc($_->{$by}) eq lc($hint));
+	}
+	return 0;
+}
+
+sub valid_timeout {
+	my ($to) = @_;
+	our $default_timeout;
+	$to = $default_timeout unless($to);
+	$to = 3600 if $to > 3600;
+	$to = 10 if $to < 10;
+	return $to;
+}
+
 sub feed_new {
 	my $uri = shift;
-	my $timeout = shift // 120;
+	my $timeout = shift;
+	my $id = shift;
+	my $color = shift;
 	state $nextfid = 1;
 	my $feed = {
-		id => $nextfid,
+		id => $id // "$nextfid",
 		uri => URI->new($uri),
 		name => $uri,
+		color => $color,
 		lastcheck => clock_gettime(CLOCK_MONOTONIC) - 86400,
 		timeout => $timeout,
 		active => 1, # use to deactivate when an error has been encountered.
@@ -194,7 +222,7 @@ sub feed_check {
 	my $feed = shift;
 	return if(not $feed->{active});
 	my $now = clock_gettime(CLOCK_MONOTONIC);
-	if(($now - $feed->{lastcheck}) > $feed->{timeout}) {
+	if(($now - $feed->{lastcheck}) > valid_timeout($feed->{timeout})) {
 		if($feed->{io}->{failed} >= 3) {
 			$feed->{active} = 0;
 			$feed->{generation} += 1; # so the "Skipped" message won't hang forever
@@ -214,7 +242,7 @@ sub feed_check {
 		$feed->{io}->{failed} += 1;
 		$feed->{lastcheck} = $now;
 	}
-	return $feed->{lastcheck} + $feed->{timeout};
+	return $feed->{lastcheck} + valid_timeout($feed->{timeout});
 }
 
 sub feed_io_event_read {
@@ -326,17 +354,27 @@ sub feed_delete {
 }
 
 sub feed_stringrepr {
-	my $feed = shift;
-	return "#" .
-	$feed->{id} . ": " .
-	$feed->{name} . 
-	(($feed->{name} ne $feed->{uri}) ? (" (" .$feed->{uri}. ")") : "") . 
-	($feed->{active} ? " ":" in")."active, " . 
-	$feed->{timeout} ."s";
+	my ($feed, $long) = @_;
+	return unless $feed;
+	if($long) {
+		return "#" .
+		($feed->{color} ? $feed->{color} : '') .
+		$feed->{id} .
+		($feed->{color} ? '%n' : '') .
+		": " .
+		$feed->{name} . 
+		(($feed->{name} ne $feed->{uri}) ? (" (" .$feed->{uri}. ")") : "") . 
+		($feed->{active} ? " ":" in")."active, " . 
+		valid_timeout($feed->{timeout}) ."s";
+	} else {
+		return ($feed->{color} ? $feed->{color} : '') .
+		$feed->{id} .
+		($feed->{color} ? '%n' : '');
+	}
 }
 
 sub feedprint {
-	my ($msg, $name) = @_;
+	my ($msg, $feed) = @_;
 	state $feedwin = 0;
 	$feedwin = 0 if(not $feedwin or $feedwin->{name} ne 'irssi-feed');
 	if(not $feedwin) {
@@ -348,8 +386,8 @@ sub feedprint {
 		}
 	}
 	if($feedwin) {
-		if($name) {
-			$feedwin->printformat(Irssi::MSGLEVEL_CLIENTCRAP, 'feedmsg', $name, $msg);
+		if($feed) {
+			$feedwin->printformat(Irssi::MSGLEVEL_CLIENTCRAP, 'feedmsg', feed_stringrepr($feed), $msg);
 		} else {
 			$feedwin->print($msg);
 		}
@@ -364,3 +402,4 @@ our $initial_skips = 0;
 our @feeds = ();
 Irssi::timeout_add_once(500, \&initialize, 0);
 Irssi::theme_register([ feedmsg => '<$0> $1' ]);
+our $default_timeout = 180;
