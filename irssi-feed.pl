@@ -5,7 +5,6 @@
 use strict;
 use warnings;
 use feature 'state';
-use Data::Dumper; # TODO: rem
 use XML::Feed;
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use List::Util qw(min);
@@ -56,7 +55,7 @@ sub feedreader_cmd {
 	if(!GetOptionsFromString($args, 
 		'uri=s' => \$feed_uri,
 		'id=s' => \$feed_id,
-		'interval' => \$feed_timeout,
+		'interval=i' => \$feed_timeout,
 		'color=s' => \$feed_color,
 		'newid=s' => \$feed_newid)
 	) {
@@ -65,31 +64,36 @@ sub feedreader_cmd {
 	}
 	my $feed = find_feed_by('id', $feed_id) // find_feed_by('url', $feed_uri);
 	$feed_timeout = valid_timeout($feed_timeout) if($feed_timeout);
+	if($feed_color ne 'NOMODIFY' && $feed_color !~ m/^%[0-9krbygmpcwKRBYGMPCWFU#]$/ && $feed_color) {
+		feedprint("Invalid color.");
+		$feed_color = 'NOMODIFY';
+	}
 	if($cmd eq "add") {
 		if($feed) {
 			feedprint("Failed to add feed " . feed_stringrepr($feed) . ": Already exists");
-		} elsif($feed_uri) {
+		} elsif(!$feed_uri) {
+			feedprint("Failed to add feed. No uri given.");
+		} else {
+			$feed_color = '' if($feed_color = 'NOMODIFY');
 			$feed = feed_new($feed_uri, $feed_timeout, $feed_id, $feed_color);
 			feedprint("Added feed " . feed_stringrepr($feed, 'long'));
 			save_config();
 			check_feeds();
-		} else {
-			feedprint("Failed to add feed. No uri given.");
 		}
 	} elsif ($cmd eq "set") {
-		if($feed) {
+		if(!$feed) {
+			feedprint("No feed found.");
+		} else {
 			$feed->{active} = 1;
 			$feed->{io}->{failed} = 0;
 			$feed->{uri} = $feed_uri if($feed_uri && $feed_id);
-			$feed->{color} = $feed_color eq 'NOMODIFY' ? $feed->{color} : $feed_color;
+			$feed->{color} = $feed_color unless($feed_color eq 'NOMODIFY');
 			$feed->{timout} = $feed_timeout if($feed_timeout);
 			$feed->{id} = $feed_newid if($feed_newid);
 			save_config();
 			check_feeds();
 			feedprint("Modified feed: ". feed_stringrepr($feed, 'long'));
 			check_feeds();
-		} else {
-			feedprint("No feed found.");
 		}
 	} elsif ($cmd eq "list") {
 		our @feeds;
@@ -121,8 +125,6 @@ sub feedreader_cmd {
 			feedprint("No feed to remove.");
 		}
 		save_config;
-	} elsif ($cmd eq "eval") {
-		feedprint(Dumper(eval ($args)));
 	} else {
 		feedprint("Unknown command: /feed $cmd");
 	}
@@ -134,7 +136,6 @@ sub check_feeds {
 	state $timeoutcntr = 0;
 	my $thistimeout = shift // $timeoutcntr;
 	our @feeds;
-	#feedprint("check! $thistimeout $timeoutcntr");
 	my $nulldate = DateTime->new(year => 0);
 	foreach my $feed (@feeds) {
 		feedprint($_->title ." - ". $_->link, $feed) foreach
@@ -149,7 +150,6 @@ sub check_feeds {
 		$timeoutcntr += 1;
 		my $hackcopy = $timeoutcntr; # to avoid passing a reference. I don't understand why it happens
 		Irssi::timeout_add_once(1000 * $timeout, \&check_feeds, $hackcopy) if((scalar(grep { $_->{active} } @feeds)) > 0);
-		#feedprint("$hackcopy check in $timeout.")  if((scalar(grep { $_->{active} } @feeds)) > 0);
 	}
 	our $initial_skips;
 	if($initial_skips && all_feeds_gen1()) {
@@ -387,7 +387,7 @@ sub feedprint {
 	}
 	if($feedwin) {
 		if($feed) {
-			$feedwin->printformat(Irssi::MSGLEVEL_CLIENTCRAP, 'feedmsg', feed_stringrepr($feed), $msg);
+			$feedwin->print('<' . feed_stringrepr($feed) ."> $msg", Irssi::MSGLEVEL_PUBLIC);
 		} else {
 			$feedwin->print($msg);
 		}
@@ -401,5 +401,4 @@ Irssi::settings_add_str('feedreader', 'feedlist', '');
 our $initial_skips = 0;
 our @feeds = ();
 Irssi::timeout_add_once(500, \&initialize, 0);
-Irssi::theme_register([ feedmsg => '<$0> $1' ]);
 our $default_timeout = 180;
