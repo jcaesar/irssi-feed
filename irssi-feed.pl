@@ -45,7 +45,7 @@ sub initialize {
 }
 
 sub feedreader_cmd {
-	my ($data) = @_; #discarding server and window_item
+	my ($data, $server, $window_item) = @_;
 	my ($cmd, $args) = split(/ /, $data, 2);
 	my $feed_id;
 	my $feed_uri;
@@ -74,9 +74,9 @@ sub feedreader_cmd {
 		} elsif(!$feed_uri) {
 			feedprint("Failed to add feed. No uri given.");
 		} else {
-			$feed_color = '' if($feed_color = 'NOMODIFY');
+			$feed_color = '' if($feed_color eq 'NOMODIFY');
 			$feed = feed_new($feed_uri, $feed_timeout, $feed_id, $feed_color);
-			feedprint("Added feed " . feed_stringrepr($feed, 'long'));
+			feedprint("Added feed " . feed_stringrepr($feed, 'long')) if($window_item);
 			save_config();
 			check_feeds();
 		}
