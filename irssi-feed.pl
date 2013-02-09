@@ -1,6 +1,14 @@
-# by Julius Michaelis <iRRSi@cserv.dyndns.org>
+# uses XML::Feed (yep, debian's libxml-feed-perl has huge dependencies...)
 #
-# uses XML::Feed (yep, libxml-feed-perl has huge dependencies...)
+# Displays messages in status window, unless a window irssi-feed exists
+# Add one with /window new hidden /window name irssi-feed
+#
+# Command format:
+# /feed {add|set|list|rm} [--uri <address>] [--id <short name>] [--color %<color>] [--newid <new short name>] [--interval <seconds>]
+#
+# Note: Since XML::Feed's HTTP doesn't support async usage, I implemented an
+# an own HTTP client. It won't do anything sensible when redirected and does
+# not support https.
 
 use strict;
 use warnings;
@@ -11,13 +19,14 @@ use List::Util qw(min);
 use IO::Socket::INET;
 use Errno;
 use Getopt::Long qw(GetOptionsFromString);
-our $VERSION = "20121020";
+our $VERSION = "20130209";
 our %IRSSI = (
 	authors     => 'Julius Michaelis',
-	contact     => 'iRRSi@cserv.dyndns.org',
+	contact     => 'iRRSi@cserv.dyndns.org', # see also: JCaesar on freenode, probably idling in #irssi
 	name        => 'iRSSi feed reader',
 	description => 'Parses and announces XML/Atom feeds',
 	license     => 'GPLv3',
+	url         => 'https://github.com/jcaesar/irssi-feed'
 	changed     => '$VERSION',
 );
 use Irssi qw(command_bind timeout_add INPUT_READ INPUT_WRITE);
