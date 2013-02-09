@@ -138,7 +138,7 @@ sub check_feeds {
 	our @feeds;
 	my $nulldate = DateTime->new(year => 0);
 	foreach my $feed (@feeds) {
-		feedprint($_->title ." - ". $_->link, $feed) foreach
+		feed_announce($feed, $_) foreach
 			sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) } grep {defined $_} feed_get_news($feed);
 	}
 	my $nextcheck = ((min(map { feed_check($_) } @feeds)) // 0) + 1;
@@ -373,8 +373,16 @@ sub feed_stringrepr {
 	}
 }
 
+sub feed_announce {
+	my ($feed, $news) = @_;
+	my $space = "";
+	$space =~ s//' ' x ((length $feed->{id}) + 3)/e;
+	feedprint('<' . feed_stringrepr($feed) . '> ' . $news->title . "\n" . $space . $news->link, Irssi::MSGLEVEL_PUBLIC);
+
+}
+
 sub feedprint {
-	my ($msg, $feed) = @_;
+	my ($msg) = @_;
 	state $feedwin = 0;
 	$feedwin = 0 if(not $feedwin or $feedwin->{name} ne 'irssi-feed');
 	if(not $feedwin) {
@@ -386,11 +394,7 @@ sub feedprint {
 		}
 	}
 	if($feedwin) {
-		if($feed) {
-			$feedwin->print('<' . feed_stringrepr($feed) ."> $msg", Irssi::MSGLEVEL_PUBLIC);
-		} else {
-			$feedwin->print($msg);
-		}
+		$feedwin->print($msg, Irssi::MSGLEVEL_PUBLIC);
 	} else {
 		Irssi::print($msg);
 	}
