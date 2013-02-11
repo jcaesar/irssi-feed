@@ -105,7 +105,7 @@ sub feedreader_cmd {
 			$feed->{io}->{failed} = 0;
 			$feed->{uri} = $feed_uri if($feed_uri && $feed_id);
 			$feed->{color} = $feed_color unless($feed_color eq 'NOMODIFY');
-			$feed->{timout} = $feed_timeout if($feed_timeout);
+			$feed->{timeout} = $feed_timeout if($feed_timeout);
 			$feed->{id} = $feed_newid if($feed_newid);
 			save_config();
 			feedprint("Modified feed: ". feed_stringrepr($feed, 'long'));
