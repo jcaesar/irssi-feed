@@ -7,8 +7,8 @@
 # /feed {add|set|list|rm} [--uri <address>] [--id <short name>] [--color %<color>] [--newid <new short name>] [--interval <seconds>]
 #
 # Note: Since XML::Feed's HTTP doesn't support async usage, I implemented an
-# an own HTTP client. It won't do anything sensible when redirected and does
-# not support https.
+# an own HTTP request mechanism. It won't do anything sensible when redirected
+# and does not support https.
 
 use strict;
 use warnings;
@@ -275,6 +275,7 @@ sub feed_io_event_write {
 		$query .= '?' . $self->{uri}->query if $self->{uri}->query;
 		my $req = "GET " . $query . " HTTP/1.0\r\n" .
 				"Host: " . $self->{uri}->host . "\r\n" .
+				"Accept-Encoding: gzip,deflate\r\n" .
 				"User-Agent: Irssi feed reader " . $VERSION . "\r\n" .
 				"Connection: close\r\n\r\n";
 		$self->{io}->{conn}->send($req);
