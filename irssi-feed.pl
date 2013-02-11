@@ -26,7 +26,7 @@ our %IRSSI = (
 	name        => 'iRSSi feed reader',
 	description => 'Parses and announces XML/Atom feeds',
 	license     => 'GPLv3',
-	url         => 'https://github.com/jcaesar/irssi-feed'
+	url         => 'https://github.com/jcaesar/irssi-feed',
 	changed     => '$VERSION',
 );
 use Irssi qw(command_bind timeout_add INPUT_READ INPUT_WRITE);
