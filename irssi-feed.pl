@@ -35,7 +35,7 @@ sub save_config {
 	our @feeds;
 	my $str = '';
 	foreach my $feed (@feeds) {
-		if(defined $feed) { # this will be the only function with extra security against invalid stuff..
+		if(defined $feed) {
 			$str .= " --id $feed->{id}" if($feed->{id});
 			$str .= " --uri $feed->{uri}";
 			$str .= " --interval $feed->{timeout} " if($feed->{timeout});
@@ -109,7 +109,7 @@ sub feedreader_cmd {
 			feedprint("Feed list: empty");
 		} else {
 			feedprint("Feed list:");
-			foreach my $feed (@feeds) {
+			foreach my $feed (sort { $a->{color} cmp $b->{color} } @feeds) {
 				feedprint("   " . feed_stringrepr($feed, 'long'));
 			}
 		}
@@ -325,7 +325,7 @@ sub feed_announce {
 	my $nulldate = DateTime->new(year => 0);
 	feed_announce_item($feed, $_)
 		foreach
-		sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) }
+		sort { DateTime->compare_ignore_floating($a->issued // $nulldate, $b->issued // $nulldate) }
 		grep {defined $_} feed_get_news($feed);
 	finished_load_message();
 }
