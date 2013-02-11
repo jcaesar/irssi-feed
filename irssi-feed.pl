@@ -53,14 +53,6 @@ sub initialize {
 	check_feeds();
 }
 
-sub initial_message {
-	our $initial_skips;
-	if($initial_skips && all_feeds_gen1()) {
-		feedprint("Skipped $initial_skips feed entries.");
-		$initial_skips = 0;
-	}
-}
-
 sub feedreader_cmd {
 	my ($data, $server, $window_item) = @_;
 	my ($cmd, $args) = split(/ /, $data, 2);
@@ -335,7 +327,7 @@ sub feed_announce {
 		foreach
 		sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) }
 		grep {defined $_} feed_get_news($feed);
-	initial_message;
+	finished_load_message();
 }
 
 sub feed_get_news {
@@ -360,6 +352,21 @@ sub feed_get_news {
 	$self->{generation} += 1;
 	$self->{io}->{xml} = 0;
 	return @news;
+}
+
+sub feed_announce_item {
+	my ($feed, $news) = @_;
+	my $space = "";
+	$space =~ s//' ' x ((length $feed->{id}) + 3)/e;
+	feedprint('<' . feed_stringrepr($feed) . '> ' . $news->title . "\n" . $space . $news->link, Irssi::MSGLEVEL_PUBLIC);
+}
+
+sub finished_load_message {
+	our $initial_skips;
+	if($initial_skips && all_feeds_gen1()) {
+		feedprint("Skipped $initial_skips feed entries.");
+		$initial_skips = 0;
+	}
 }
 
 sub feed_delete {
@@ -387,13 +394,6 @@ sub feed_stringrepr {
 		$feed->{id} .
 		($feed->{color} ? '%n' : '');
 	}
-}
-
-sub feed_announce_item {
-	my ($feed, $news) = @_;
-	my $space = "";
-	$space =~ s//' ' x ((length $feed->{id}) + 3)/e;
-	feedprint('<' . feed_stringrepr($feed) . '> ' . $news->title . "\n" . $space . $news->link, Irssi::MSGLEVEL_PUBLIC);
 }
 
 sub feedprint {
