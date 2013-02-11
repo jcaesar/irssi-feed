@@ -53,6 +53,14 @@ sub initialize {
 	check_feeds();
 }
 
+sub initial_message {
+	our $initial_skips;
+	if($initial_skips && all_feeds_gen1()) {
+		feedprint("Skipped $initial_skips feed entries.");
+		$initial_skips = 0;
+	}
+}
+
 sub feedreader_cmd {
 	my ($data, $server, $window_item) = @_;
 	my ($cmd, $args) = split(/ /, $data, 2);
@@ -100,7 +108,6 @@ sub feedreader_cmd {
 			$feed->{timout} = $feed_timeout if($feed_timeout);
 			$feed->{id} = $feed_newid if($feed_newid);
 			save_config();
-			check_feeds();
 			feedprint("Modified feed: ". feed_stringrepr($feed, 'long'));
 			check_feeds();
 		}
@@ -145,11 +152,6 @@ sub check_feeds {
 	state $timeoutcntr = 0;
 	my $thistimeout = shift // $timeoutcntr;
 	our @feeds;
-	my $nulldate = DateTime->new(year => 0);
-	foreach my $feed (@feeds) {
-		feed_announce($feed, $_) foreach
-			sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) } grep {defined $_} feed_get_news($feed);
-	}
 	my $nextcheck = ((min(map { feed_check($_) } @feeds)) // 0) + 1;
 	if($thistimeout == $timeoutcntr) {
 		my $fivemin = clock_gettime(CLOCK_MONOTONIC) + 301;
@@ -159,11 +161,6 @@ sub check_feeds {
 		$timeoutcntr += 1;
 		my $hackcopy = $timeoutcntr; # to avoid passing a reference. I don't understand why it happens
 		Irssi::timeout_add_once(1000 * $timeout, \&check_feeds, $hackcopy) if((scalar(grep { $_->{active} } @feeds)) > 0);
-	}
-	our $initial_skips;
-	if($initial_skips && all_feeds_gen1()) {
-		feedprint("Skipped $initial_skips feed entries.");
-		$initial_skips = 0;
 	}
 }
 
@@ -328,7 +325,17 @@ sub feed_parse_buffer {
 		$feed->{active} = 0;
 	}
 	feed_cleanup_conn($feed, 1);
-	check_feeds;
+	feed_announce($feed);
+}
+
+sub feed_announce {
+	my $feed = shift;
+	my $nulldate = DateTime->new(year => 0);
+	feed_announce_item($feed, $_)
+		foreach
+		sort { ($a->issued // $nulldate) > ($b->issued // $nulldate) }
+		grep {defined $_} feed_get_news($feed);
+	initial_message;
 }
 
 sub feed_get_news {
@@ -382,12 +389,11 @@ sub feed_stringrepr {
 	}
 }
 
-sub feed_announce {
+sub feed_announce_item {
 	my ($feed, $news) = @_;
 	my $space = "";
 	$space =~ s//' ' x ((length $feed->{id}) + 3)/e;
 	feedprint('<' . feed_stringrepr($feed) . '> ' . $news->title . "\n" . $space . $news->link, Irssi::MSGLEVEL_PUBLIC);
-
 }
 
 sub feedprint {
