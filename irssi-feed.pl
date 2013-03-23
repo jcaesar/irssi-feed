@@ -358,7 +358,9 @@ sub feed_announce_item {
 	my ($feed, $news) = @_;
 	my $space = "";
 	$space =~ s//' ' x ((length $feed->{id}) + 3)/e;
-	feedprint('<' . feed_stringrepr($feed) . '> ' . $news->title . "\n" . $space . $news->link, Irssi::MSGLEVEL_PUBLIC);
+	my $titleline = $news->title;
+	$titleline =~ s/\s*\n\s*/ | /g;
+	feedprint('<' . feed_stringrepr($feed) . '> ' . $titleline . "\n" . $space . $news->link, Irssi::MSGLEVEL_PUBLIC);
 }
 
 sub finished_load_message {
