@@ -307,6 +307,20 @@ sub feed_parse_buffer {
 	my $feed = shift;
 	return unless($feed->{io}->{state} == 2);
 	my $http = HTTP::Response->parse($feed->{io}->{buffer});
+	if($http->is_redirect) {
+		my $location = $http->header('Location');
+		my $uri = URI->new($location);
+		if($location) {
+			feedprint('Feed ' . feed_stringrepr($feed) . ' got redirected to ' . $location);
+			$feed->{uri} = $uri;
+			# fake soonish needed recheck:
+			$feed->{lastcheck} = clock_gettime(CLOCK_MONOTONIC) - $feed->{timeout} + 1;
+			check_feeds();
+		} else {
+			feedprint('Feed ' . feed_stringrepr($feed) . ' got redirected, but the destination was not determinable');
+			$feed->{active} = 0;
+		}
+	}
 	return if not $http->is_success;
 	my $httpcontent = $http->content;
 	my $data = eval { $feed->{io}->{xml} = XML::Feed->parse(\$httpcontent) };
