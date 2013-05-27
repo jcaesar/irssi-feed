@@ -38,7 +38,7 @@ sub save_config {
 		if(defined $feed) {
 			$str .= " --id $feed->{id}" if($feed->{id});
 			$str .= " --uri $feed->{uri}";
-			$str .= " --interval $feed->{timeout} " if($feed->{timeout});
+			$str .= " --interval $feed->{configtimeout} " if($feed->{configtimeout});
 			$str .= " --color $feed->{color} " if($feed->{color});
 			$str .= "\n";
 		}
@@ -95,6 +95,7 @@ sub feedreader_cmd {
 		} else {
 			$feed->{active} = 1;
 			$feed->{io}->{failed} = 0;
+			$feed->{timeout} = valid_timeout($feed->{configtimeout});
 			$feed->{uri} = $feed_uri if($feed_uri && $feed_id);
 			$feed->{color} = $feed_color unless($feed_color eq 'NOMODIFY');
 			$feed->{timeout} = $feed_timeout if($feed_timeout);
@@ -170,7 +171,7 @@ sub valid_timeout {
 	my ($to) = @_;
 	our $default_timeout;
 	$to = $default_timeout unless($to);
-	$to = 3600 if $to > 3600;
+	$to = 3600 if $to > 86400;
 	$to = 10 if $to < 10;
 	return $to;
 }
@@ -187,7 +188,8 @@ sub feed_new {
 		name => $uri,
 		color => $color,
 		lastcheck => clock_gettime(CLOCK_MONOTONIC) - 86400,
-		timeout => $timeout,
+		timeout => valid_timeout($timeout), # next actual timeout. Doubled on error
+		configtimeout => $timeout,
 		active => 1, # use to deactivate when an error has been encountered.
 		itemids => {"dummy" => -1},
 		generation => 0,
@@ -220,14 +222,14 @@ sub feed_check {
 	my $feed = shift;
 	return if(not $feed->{active});
 	my $now = clock_gettime(CLOCK_MONOTONIC);
-	if(($now - $feed->{lastcheck}) > valid_timeout($feed->{timeout})) {
+	if(($now - $feed->{lastcheck}) > $feed->{timeout}) {
 		if($feed->{io}->{failed} >= 3) {
-			$feed->{active} = 0;
-			$feed->{generation} += 1; # so the "Skipped" message won't hang forever
+			$feed->{timeout} = valid_timeout($feed->{timeout} * 2);
+			$feed->{generation} += 1; # so the "Skipped n feed entries" message won't hang forever
 			return 0;
 		}
-		feedprint("Warning, stall feed " . $feed->{id}) if($feed->{io}->{conn});
-		feed_cleanup_conn($feed,1);
+		feedprint("Warning, stall feed " . feed_stringrepr($feed)) if($feed->{io}->{conn});
+		feed_cleanup_conn($feed, 1);
 		my $conn = $feed->{io}->{conn} = IO::Socket::INET->new(
 			Blocking => 0,
 			Proto => 'tcp',
@@ -240,7 +242,7 @@ sub feed_check {
 		$feed->{io}->{failed} += 1;
 		$feed->{lastcheck} = $now;
 	}
-	return $feed->{lastcheck} + valid_timeout($feed->{timeout});
+	return $feed->{lastcheck} + $feed->{timeout};
 }
 
 sub feed_io_event_read {
@@ -327,8 +329,9 @@ sub feed_parse_buffer {
 	if($data) {
 		$feed->{name} = $data->title;
 		$feed->{io}->{failed} = 0;
+		$feed->{timeout} = valid_timeout($feed->{configtimeout});
 	} else {
-		$feed->{active} = 0;
+		$feed->{timeout} = valid_timeout($feed->{timeout} * 2);
 	}
 	feed_cleanup_conn($feed, 1);
 	feed_announce($feed);
@@ -404,7 +407,7 @@ sub feed_stringrepr {
 		$feed->{name} . 
 		(($feed->{name} ne $feed->{uri}) ? (" (" .$feed->{uri}. ")") : "") . 
 		($feed->{active} ? " ":" in")."active, " . 
-		valid_timeout($feed->{timeout}) ."s";
+		$feed->{timeout} ."s";
 	} else {
 		return ($feed->{color} ? $feed->{color} : '') .
 		$feed->{id} .
@@ -436,4 +439,4 @@ Irssi::settings_add_str('feedreader', 'feedlist', '');
 our $initial_skips = 0;
 our @feeds = ();
 Irssi::timeout_add_once(500, \&initialize, 0);
-our $default_timeout = 180;
+our $default_timeout = 600;
