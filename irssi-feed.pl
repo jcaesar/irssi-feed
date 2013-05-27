@@ -278,6 +278,7 @@ sub feed_io_event_write {
 		my $req = "GET " . $query . " HTTP/1.0\r\n" .
 				"Host: " . $self->{uri}->host . "\r\n" .
 				"User-Agent: Irssi feed reader " . $VERSION . "\r\n" .
+				"Accept-Encoding: gzip\r\n" .
 				"Connection: close\r\n\r\n";
 		$self->{io}->{conn}->send($req);
 		Irssi::input_remove($self->{io}->{writetag}) if $self->{io}->{writetag};
@@ -324,7 +325,7 @@ sub feed_parse_buffer {
 		}
 	}
 	return if not $http->is_success;
-	my $httpcontent = $http->content;
+	my $httpcontent = $http->decoded_content;
 	my $data = eval { $feed->{io}->{xml} = XML::Feed->parse(\$httpcontent) };
 	if($data) {
 		$feed->{name} = $data->title;
