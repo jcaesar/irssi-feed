@@ -237,8 +237,10 @@ sub feed_check {
 			PeerPort => $feed->{uri}->port,
 			#Timeout => DO NOT SET TIMEOUT. It will activate blocking io...
 		);
-		$feed->{io}->{readtag}  = Irssi::input_add(fileno($conn), INPUT_READ,  \&feed_io_event_read, $feed);
-		$feed->{io}->{writetag} = Irssi::input_add(fileno($conn), INPUT_WRITE, \&feed_io_event_write, $feed);
+		if($conn) {
+			$feed->{io}->{readtag}  = Irssi::input_add(fileno($conn), INPUT_READ,  \&feed_io_event_read, $feed);
+			$feed->{io}->{writetag} = Irssi::input_add(fileno($conn), INPUT_WRITE, \&feed_io_event_write, $feed);
+		}
 		$feed->{io}->{failed} += 1;
 		$feed->{lastcheck} = $now;
 	}
